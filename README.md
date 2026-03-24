@@ -15,6 +15,16 @@
 ```
 
 ---
+## Корпус
+
+Использован датасет [Russian Jokes](https://www.kaggle.com/datasets/konstantinalbul/russian-jokes) с Kaggle.
+```python
+import kagglehub
+path = kagglehub.dataset_download("konstantinalbul/russian-jokes")
+```
+Датасет содержит анекдоты на русском языке. После загрузки был применён пайплайн предобработки — приведение к нижнему регистру, удаление спецсимволов, замена ё→е, токенизация (razdel), фильтрация стоп-слов (NLTK + дополнительный словарь) и лемматизация (pymorphy3). Документы короче 3 слов и дубликаты были удалены.
+
+Итоговый размер корпуса после предобработки: **124 762 документа**, сохранён в `jokes_clean.csv`.
 
 ## Модели
 
@@ -47,7 +57,7 @@ import pandas as pd
 from preprocessing import preprocess_corpus
 from build_indexes import build_all
 
-df = pd.read_csv("jokes_2000.csv")
+df = pd.read_csv("clean_jokes.csv")
 corpus_clean = preprocess_corpus(df, text_col="text")
 indexes = build_all(corpus_clean)
 ```
