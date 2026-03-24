@@ -1,4 +1,25 @@
 # Проект по информационному поиску
+---
+
+## Установка
+```bash
+pip install pymorphy3 razdel nltk rank-bm25 gensim navec
+
+# скачать модель Navec
+wget https://storage.yandexcloud.net/natasha-navec/packs/navec_hudlit_v1_12B_500K_300d_100q.tar
+```
+---
+
+## Корпус
+
+Использован датасет [Russian Jokes](https://www.kaggle.com/datasets/konstantinalbul/russian-jokes) с Kaggle.
+```python
+import kagglehub
+path = kagglehub.dataset_download("konstantinalbul/russian-jokes")
+```
+Датасет содержит анекдоты на русском языке. После загрузки был применен пайплайн предобработки — приведение к нижнему регистру, удаление спецсимволов, замена ё→е, токенизация (razdel), фильтрация стоп-слов (NLTK + дополнительный словарь) и лемматизация (pymorphy3). Документы короче 3 слов и дубликаты были удалены.
+
+Итоговый размер корпуса после предобработки: **124 762 документа**, сохранен в `jokes_clean.csv`.
 
 ## Структура проекта
 ```
@@ -14,18 +35,6 @@
 └── indexes/  # сохраненные индексы (*.pkl)
 ```
 
----
-## Корпус
-
-Использован датасет [Russian Jokes](https://www.kaggle.com/datasets/konstantinalbul/russian-jokes) с Kaggle.
-```python
-import kagglehub
-path = kagglehub.dataset_download("konstantinalbul/russian-jokes")
-```
-Датасет содержит анекдоты на русском языке. После загрузки был применён пайплайн предобработки — приведение к нижнему регистру, удаление спецсимволов, замена ё→е, токенизация (razdel), фильтрация стоп-слов (NLTK + дополнительный словарь) и лемматизация (pymorphy3). Документы короче 3 слов и дубликаты были удалены.
-
-Итоговый размер корпуса после предобработки: **124 762 документа**, сохранён в `jokes_clean.csv`.
-
 ## Модели
 
 | Индекс   | Библиотека   | Описание |
@@ -36,62 +45,89 @@ path = kagglehub.dataset_download("konstantinalbul/russian-jokes")
 
 Для BM25 релевантность считается через встроенную скоринговую функцию `get_scores()`.
 
-Для Word2Vec и Navec — косинусное сходство между вектором запроса и матрицей документов.
+Для Word2Vec и Navec - косинусное сходство между вектором запроса и матрицей документов.
 
----
-
-## Установка
-```bash
-pip install pymorphy3 razdel nltk rank-bm25 gensim navec
-
-# скачать модель Navec
-wget https://storage.yandexcloud.net/natasha-navec/packs/navec_hudlit_v1_12B_500K_300d_100q.tar
-```
 ---
 
 ## Как запустить
 
-### 1. Предобработка и построение индексов
+### Шаг 1: предобработка корпуса
 ```python
 import pandas as pd
 from preprocessing import preprocess_corpus
+
+df = pd.read_csv("jokes_2000.csv")
+corpus_clean = preprocess_corpus(df, text_col="text")
+corpus_clean.to_csv("jokes_clean.csv", index=False)
+```
+
+### Шаг 2 — построение индексов
+```python
 from build_indexes import build_all
 
-df = pd.read_csv("clean_jokes.csv")
-corpus_clean = preprocess_corpus(df, text_col="text")
 indexes = build_all(corpus_clean)
 ```
 
-### 2. Поиск через Python
+В папке `indexes/` появятся три файла: `bm25_index.pkl`, `w2v_index.pkl`, `navec_index.pkl`. Их не нужно пересобирать при каждом запуске — только один раз.
+
+
+### Шаг 3 — поиск через Python
 ```python
 from search import search
+import pandas as pd
 
+corpus_clean = pd.read_csv("jokes_clean.csv")
 results = search("муж жена дома", corpus_clean, method="bm25", top_k=5)
+print(results)
 ```
 
-### 3. Поиск через CLI
+### Шаг 4 — поиск через CLI
 ```bash
-python cli.py --query "муж жена дома" --method bm25 --top_k 5
+python cli.py --query "муж жена дома" --method bm25 --top_k 5 --corpus jokes_clean.csv
 ```
+
+---
+## Параметры CLI
+
+| Параметр | Сокращение | По умолчанию | Описание |
+|----------|------------|--------------|----------|
+| `--query` | `-q` | обязательный | Текст поискового запроса |
+| `--method` | `-m` | `bm25` | Метод поиска: `bm25`, `w2v`, `navec` |
+| `--top_k` | `-k` | `5` | Количество результатов |
+| `--corpus` | `-c` | `jokes_clean.csv` | Путь к предобработанному CSV-файлу |
 
 ### Примеры
 ```bash
-# базовый поиск
+# базовый поиск через BM25
 python cli.py -q "врач пациент больница"
 
 # топ-10 через Word2Vec
 python cli.py -q "школа учитель урок" -m w2v -k 10
 
-# поиск через Navec с другим корпусом
-python cli.py -q "кот собака" -m navec -c /content/my_corpus.csv
+# поиск через Navec
+python cli.py -q "кот собака" -m navec -k 5
 ```
 
 ---
 
 ## Вывод результатов
 
+Каждый запрос выводит время поиска и пронумерованный список документов с оценкой релевантности:
+```
+Запрос: «муж жена дома»
+Метод: BM25
+Топ-3 результатов
+
+  время поиска: 1.4486 сек.
+1. Если хозяин в доме - жена, то муж там - хозяйка.
+   score: 14.0394
+
+2. Жена - мужу: - Ну какой боулинг? В доме шаром покати!
+   score: 13.4972
+```
+
 При каждом поиске выводится время выполнения и список документов с оценкой релевантности.
 
-Диапазон оценок:
-- BM25 — от 0 и выше, чем больше тем релевантнее
-- Word2Vec / Navec — косинусное сходство от 0 до 1, где 1 — полное совпадение
+Диапазон оценок метрик:
+- BM25: от 0 и выше, чем больше тем релевантнее
+- Word2Vec / Navec: косинусное сходство от 0 до 1, где 1 - полное совпадение
